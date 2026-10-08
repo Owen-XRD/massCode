@@ -1,5 +1,6 @@
 import fs from 'fs-extra'
 import { stateContentCacheByPath } from '../cache'
+import { writeTextFileAtomicSync } from './atomicWrite'
 import { normalizeFlag, normalizeFolderUiState } from '../normalizers'
 import { markAppWrittenFileAsLocal } from './cloudFiles'
 import { readVaultTextFileSync } from './guardedRead'
@@ -53,7 +54,7 @@ export function createStateAdapter<
 
     if (!fs.pathExistsSync(paths.statePath)) {
       const defaultStateContent = `${JSON.stringify(config.createDefaultState(), null, 2)}\n`
-      fs.writeFileSync(paths.statePath, defaultStateContent, 'utf8')
+      writeTextFileAtomicSync(paths.statePath, defaultStateContent)
       markAppWrittenFileAsLocal(paths.statePath)
       stateContentCacheByPath.set(paths.statePath, defaultStateContent)
     }

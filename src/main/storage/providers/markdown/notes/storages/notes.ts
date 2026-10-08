@@ -421,7 +421,8 @@ export function createNotesNotesStorage(): NotesStorage {
     updateNote(id: number, input: NoteUpdateInput): NoteUpdateResult {
       const paths = resolvePaths()
       const { state, notes } = getNotesRuntimeCache(paths)
-      const note = findNoteById(notes, id)
+      const committed = findNoteById(notes, id)
+      const note = committed && { ...committed }
 
       if (!note) {
         return { invalidInput: false, notFound: true }
@@ -478,6 +479,7 @@ export function createNotesNotesStorage(): NotesStorage {
       else {
         writeNoteToFile(paths, note)
       }
+      Object.assign(committed!, note)
 
       if (note.name !== previousName || note.folderId !== previousFolderId) {
         rewriteBacklinksAfterNoteUpdate({
@@ -527,7 +529,8 @@ export function createNotesNotesStorage(): NotesStorage {
     ): NoteUpdateResult {
       const paths = resolvePaths()
       const { notes } = getNotesRuntimeCache(paths)
-      const note = findNoteById(notes, id)
+      const committed = findNoteById(notes, id)
+      const note = committed && { ...committed, properties: structuredClone(committed.properties) }
 
       if (!note) {
         return { invalidInput: false, notFound: true }
@@ -545,6 +548,7 @@ export function createNotesNotesStorage(): NotesStorage {
 
       note.updatedAt = Date.now()
       writeNoteToFile(paths, note)
+      Object.assign(committed!, note)
       scheduleDockBadgeRefresh()
 
       return { invalidInput: false, notFound: false }

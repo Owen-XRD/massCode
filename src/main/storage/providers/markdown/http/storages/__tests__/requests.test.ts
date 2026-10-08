@@ -120,6 +120,7 @@ vi.mock('../../../../../../store', () => ({
 
 describe('http requests storage', () => {
   beforeEach(() => {
+    setDatalessProbeForTests(() => false)
     tempVaultPath = fs.mkdtempSync(
       path.join(os.tmpdir(), 'http-requests-storage-'),
     )
@@ -365,7 +366,9 @@ describe('http requests storage', () => {
       request.filePath,
     )
     makeSparsePlaceholder(markdown)
+    const statSpy = mockMarkdownFilesAsZeroBlocks()
     setDatalessProbeForTests(absolutePath => absolutePath === markdown)
+    try {
     expect(storage.getRequestById(id)?.runtimeState).toBe('pending')
     expect(() =>
       storage.updateRuntime(
@@ -375,6 +378,10 @@ describe('http requests storage', () => {
       ),
     ).toThrow('CLOUD_FILE_NOT_DOWNLOADED')
     expect(fs.statSync(markdown).size).toBe(4096)
+    }
+    finally {
+      statSpy.mockRestore()
+    }
   })
 
   it('rejects stale editor revisions including inline runtime creation and deletion', () => {
@@ -489,15 +496,17 @@ describe('http requests storage', () => {
           bodyType: 'text',
         }),
       ).not.toThrow()
-      const sourceIdentity = fs.lstatSync(sourcePath, { bigint: true })
+      const beforeRename = fs.readFileSync(sourcePath, 'utf8')
       expect(() =>
         storage.updateRequest(id, { name: 'Resident Renamed' }),
       ).not.toThrow()
 
       const targetPath = path.join(paths.httpRoot, 'Resident Renamed.md')
-      const targetIdentity = fs.lstatSync(targetPath, { bigint: true })
-      expect(targetIdentity.dev).toBe(sourceIdentity.dev)
-      expect(targetIdentity.ino).toBe(sourceIdentity.ino)
+      // Atomic publication replaces the inode. The contract is preserved
+      // content, a committed new name, and no stranded source path.
+      expect(beforeRename).toContain('resident body')
+      expect(fs.pathExistsSync(sourcePath)).toBe(false)
+      expect(storage.getRequestById(id)?.name).toBe('Resident Renamed')
       expect(fs.readFileSync(targetPath, 'utf8')).toContain('resident body')
       expect(getFileAvailability(targetPath).isCloudPlaceholder).toBe(false)
     }
@@ -532,7 +541,9 @@ describe('http requests storage', () => {
         'trusted destination read failed',
       )
       expect(markSpy).not.toHaveBeenCalled()
-      expect(fs.pathExistsSync(targetPath)).toBe(true)
+      expect(fs.pathExistsSync(targetPath)).toBe(false)
+      expect(fs.pathExistsSync(path.join(paths.httpRoot, 'Read Source.md'))).toBe(true)
+      expect(storage.getRequestById(id)?.name).toBe('Read Source')
     }
     finally {
       readSpy.mockRestore()
@@ -550,14 +561,14 @@ describe('http requests storage', () => {
     const targetPath = path.join(paths.httpRoot, 'Write Target.md')
     const cloudFiles = await import('../../../runtime/shared/cloudFiles')
     const markSpy = vi.spyOn(cloudFiles, 'markAppWrittenFileAsLocal')
-    const writeFileSync = fs.writeFileSync.bind(fs)
+    const renameSync = fs.renameSync.bind(fs)
     const writeSpy = vi
-      .spyOn(fs, 'writeFileSync')
-      .mockImplementation((filePath, data, options?) => {
-        if (filePath === targetPath) {
+      .spyOn(fs, 'renameSync')
+      .mockImplementation((sourcePath, destinationPath) => {
+        if (destinationPath === targetPath && String(sourcePath).endsWith('.tmp')) {
           throw new Error('trusted destination write failed')
         }
-        return writeFileSync(filePath, data, options as never)
+        return renameSync(sourcePath, destinationPath)
       })
 
     try {
@@ -565,7 +576,9 @@ describe('http requests storage', () => {
         'trusted destination write failed',
       )
       expect(markSpy).not.toHaveBeenCalled()
-      expect(fs.pathExistsSync(targetPath)).toBe(true)
+      expect(fs.pathExistsSync(targetPath)).toBe(false)
+      expect(fs.pathExistsSync(path.join(paths.httpRoot, 'Write Source.md'))).toBe(true)
+      expect(storage.getRequestById(id)?.name).toBe('Write Source')
     }
     finally {
       writeSpy.mockRestore()

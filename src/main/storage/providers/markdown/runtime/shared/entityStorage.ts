@@ -312,9 +312,13 @@ export function addTagToEntity<TEntity extends EntityWithTags>(
 
   if (!input.entity.tags.includes(input.tagId)) {
     assertEntityContentAvailable(input.entity)
-    input.entity.tags.push(input.tagId)
-    input.entity.updatedAt = Date.now()
-    input.onUpdated(input.entity)
+    const candidate = {
+      ...input.entity,
+      tags: [...input.entity.tags, input.tagId],
+      updatedAt: Date.now(),
+    }
+    input.onUpdated(candidate)
+    Object.assign(input.entity, candidate)
 
     return {
       entityFound: true,
@@ -366,9 +370,13 @@ export function deleteTagFromEntity<TEntity extends EntityWithTags>(
   }
 
   assertEntityContentAvailable(input.entity)
-  input.entity.tags.splice(tagIndex, 1)
-  input.entity.updatedAt = Date.now()
-  input.onUpdated(input.entity)
+  const candidate = {
+    ...input.entity,
+    tags: input.entity.tags.filter((_tag, index) => index !== tagIndex),
+    updatedAt: Date.now(),
+  }
+  input.onUpdated(candidate)
+  Object.assign(input.entity, candidate)
 
   return {
     entityFound: true,

@@ -6,6 +6,7 @@ const path = require('node:path')
 const process = require('node:process')
 const { parseArgs } = require('node:util')
 const { validateRoot, markerName } = require('./common.cjs')
+const { readReportWindow } = require('./reportWindow.cjs')
 
 const repo = path.resolve(__dirname, '../..')
 const { positionals, values } = parseArgs({ allowPositionals: true, options: {
@@ -85,7 +86,7 @@ else if (command === 'report') {
   if (!values.output)
     throw new Error('--output is required')
   const { root } = validateRoot(values.output)
-  const rows = fs.readFileSync(path.join(root, 'events.jsonl'), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+  const { rows, window } = readReportWindow(root)
   const groups = new Map()
   for (const row of rows) {
     if (!Number.isFinite(row.durationMs) || row.durationMs < 0 || row.durationMs > 3600000 || typeof row.name !== 'string' || !/^[a-z0-9.-]+$/i.test(row.name) || !['ok', 'error', 'superseded'].includes(row.status))
@@ -101,8 +102,9 @@ else if (command === 'report') {
     return `| ${name} | ${durations.length} | ${percentile(0.5)} | ${durations.length >= 20 ? percentile(0.95) : '—'} | ${percentile(1)} |`
   })
   const report = ['# Пилотный benchmark massCode', '', 'Исходные условия: manifest.json; набор данных: seed.json; события: events.jsonl.', '', '| Метрика | n | p50, мс | p95, мс | max, мс |', '| --- | ---: | ---: | ---: | ---: |', ...table, '', 'Статус ok означает завершение операции без исключения, а не проверку полноты данных в интерфейсе: результат нужно сверять с ручным протоколом. Это измеренные операции данного запуска, а не предел вместимости. p95 при малом n неустойчив. state-presented заканчивается после nextTick + requestAnimationFrame и не гарантирует завершения paint. API измеряется отдельно. Перезапуск процесса не очищает файловый кэш ОС. Save durability и CPU profile этим отчётом не измеряются.', ''].join('\n')
-  fs.writeFileSync(path.join(root, 'report.md'), report)
-  console.log(report)
+  const scopedReport = `${report}\nОкно сохранённых событий (не весь запуск): ${JSON.stringify({ ...window, eventCount: rows.length })}\n`
+  fs.writeFileSync(path.join(root, 'report.md'), scopedReport)
+  console.log(scopedReport)
 }
 else {
   throw new Error('Usage: cli.cjs prepare|start|report [--output NEW_DIRECTORY] [--count 1000] [--space mixed|all|code|notes|http] [--seed TEXT] [--corpus repeated|varied] [--port 54321]')

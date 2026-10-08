@@ -2,7 +2,8 @@ import type { MarkdownNote, NotesPaths } from '../types'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'fs-extra'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setDatalessProbeForTests } from '../../../runtime/shared/cloudFiles'
 import {
   buildNoteFromIndexMetadata,
   buildNoteIndexMetadata,
@@ -55,6 +56,7 @@ vi.mock('electron-store', () => {
 })
 
 vi.mock('electron', () => ({
+  BrowserWindow: { getAllWindows: () => [] },
   app: {
     getPath: () => os.tmpdir(),
   },
@@ -79,7 +81,10 @@ function createNotesPaths(): NotesPaths {
   }
 }
 
+beforeEach(() => setDatalessProbeForTests(() => false))
+
 afterEach(() => {
+  setDatalessProbeForTests(null)
   for (const dirPath of tempDirs.splice(0)) {
     fs.removeSync(dirPath)
   }

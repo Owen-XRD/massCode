@@ -15,6 +15,7 @@ import {
 import { store } from '../../../../../store'
 import { getVaultPath } from '../../runtime/paths'
 import { rememberAppFileChange } from '../../runtime/shared/appChanges'
+import { writeTextFileAtomicSync } from '../../runtime/shared/atomicWrite'
 import { getFileAvailability } from '../../runtime/shared/cloudFiles'
 import {
   isCloudFileNotDownloadedError,
@@ -86,25 +87,18 @@ export function createHttpHistoryStorage(): HttpHistoryStorage {
   function readIndex(requestId: number | null): HttpHistoryRecord[] {
     const file = path.join(directory(requestId), 'index.yaml')
     indexMaxima.delete(file)
-    if (!fs.existsSync(file))
-      return []
+    if (!fs.existsSync(file)) return []
     const signature = indexSignature(file)
     const entries = yaml.load(readVaultTextFileSync(file))
-    if (!Array.isArray(entries))
-      throw new Error('Invalid history index')
-    const records = entries.map(entry =>
-      recordSchema.parse({ ...entry, requestId }),
-    )
-    if (signature) {
-      indexMaxima.set(file, {
-        signature,
-        maximum: records.reduce(
-          (maximum, entry) => Math.max(maximum, entry.id),
-          0,
-        ),
-        count: records.length,
-      })
-    }
+    if (!Array.isArray(entries)) throw new Error('Invalid history index')
+    const records = entries.map((entry) => recordSchema.parse({ ...entry, requestId }))
+    // Successfully read resident/sparse files may have no cacheable signature.
+    // Retain their maximum for this allocation, but force a read next time.
+    indexMaxima.set(file, {
+      signature: signature ?? '',
+      maximum: records.reduce((maximum, entry) => Math.max(maximum, entry.id), 0),
+      count: records.length,
+    })
     return records
   }
 
@@ -164,13 +158,8 @@ export function createHttpHistoryStorage(): HttpHistoryStorage {
     const folder = directory(requestId)
     fs.ensureDirSync(folder)
     const file = path.join(folder, 'index.yaml')
-    fs.writeFileSync(
-      `${file}.tmp`,
-      yaml.dump(entries, { noRefs: true, lineWidth: -1 }),
-    )
-    fs.renameSync(`${file}.tmp`, file)
+    writeTextFileAtomicSync(file, yaml.dump(entries, { noRefs: true, lineWidth: -1 }))
     indexMaxima.delete(file)
-    rememberAppFileChange(`${file}.tmp`)
     rememberAppFileChange(file)
     rememberAppFileChange(folder)
     rememberAppFileChange(path.dirname(folder))
@@ -302,16 +291,27 @@ export function createHttpHistoryStorage(): HttpHistoryStorage {
 
     appendEntry(input: HttpHistoryAppendInput) {
       migrateLegacyHistory()
-      if (limit() === 0)
-        return { id: 0 }
+      if (limit() === 0) return { id: 0 }
       const paths = resolvePaths()
       const { state } = getHttpRuntimeCache(paths)
-      if (state.provisional)
-        return { id: 0 }
+      if (state.provisional) return { id: 0 }
 
       // A damaged owner index must never be replaced with a partial history.
-      const ownRecords = readIndex(input.requestId)
+      // Refresh the owner before ID allocation even when same-size external
+      // edits share coarse timestamps; nextId may apply a reduced retention.
+      readIndex(input.requestId)
       const id = nextId()
+      const ownRecords = readIndex(input.requestId)
+      const folder = directory(input.requestId)
+      const referenced = new Set(ownRecords.map((entry) => entry.snapshotFile))
+      // A failed retention delete or an arriving sync file must not be silently
+      // discarded. Stop this owner's new history until its index is reconciled.
+      if (
+        fs.existsSync(folder) &&
+        fs.readdirSync(folder).some((file) => file.endsWith('.json') && !referenced.has(file))
+      ) {
+        throw new Error('HTTP_HISTORY_UNREFERENCED_SNAPSHOT')
+      }
       const record: HttpHistoryRecord = {
         durationMs: input.durationMs,
         id,
@@ -327,20 +327,42 @@ export function createHttpHistoryStorage(): HttpHistoryStorage {
         record.error = input.error
       }
 
-      if (input.snapshot) {
-        const file = `${id}.json`
-        record.snapshotFile = file
-        const destination = snapshotPath(record)
-        fs.ensureDirSync(path.dirname(destination))
-        fs.writeJsonSync(destination, input.snapshot)
-        rememberAppFileChange(destination)
+      const retained = [record, ...ownRecords]
+        .sort((a, b) => b.requestedAt - a.requestedAt || b.id - a.id)
+        .slice(0, limit())
+      if (!retained.includes(record)) return { id }
+      let ownedSnapshot: string | undefined
+      let published = false
+      try {
+        if (input.snapshot) {
+          const file = `${id}.json`
+          record.snapshotFile = file
+          const destination = snapshotPath(record)
+          fs.ensureDirSync(path.dirname(destination))
+          const descriptor = fs.openSync(destination, 'wx')
+          ownedSnapshot = destination
+          try {
+            fs.writeFileSync(descriptor, JSON.stringify(input.snapshot), 'utf8')
+            fs.fsyncSync(descriptor)
+          } finally {
+            fs.closeSync(descriptor)
+          }
+          rememberAppFileChange(destination)
+        }
+        writeIndex(input.requestId, retained)
+        published = true
+        const retainedIds = new Set(retained.map((entry) => entry.id))
+        for (const entry of ownRecords) {
+          if (!retainedIds.has(entry.id) && entry.snapshotFile) {
+            const file = snapshotPath(entry)
+            fs.removeSync(file)
+            rememberAppFileChange(file)
+            rememberAppFileChange(folder)
+          }
+        }
+      } finally {
+        if (ownedSnapshot && !published) fs.removeSync(ownedSnapshot)
       }
-      writeIndex(input.requestId, [record, ...ownRecords])
-      prune(
-        [record, ...ownRecords].sort(
-          (a, b) => b.requestedAt - a.requestedAt || b.id - a.id,
-        ),
-      )
       return { id }
     },
 

@@ -49,12 +49,21 @@ vi.mock('electron', () => ({
 }))
 
 vi.mock('../api', () => ({ initApi: vi.fn() }))
+// whenReady never resolves in this lifecycle unit test; AI initialization is
+// outside the tested close/quit boundary, as are the other startup services.
+vi.mock('../ai/ipc', () => ({ registerAiHandlers: vi.fn() }))
 vi.mock('../dockBadge', () => ({
   cleanupDockBadge: context.cleanupDockBadge,
   refreshDockBadge: vi.fn(),
 }))
 vi.mock('../folderIcons', () => ({ resolveFolderIconResponse: vi.fn() }))
 vi.mock('../ipc', () => ({ registerIPC: vi.fn() }))
+// createWindow is not reached while whenReady remains pending. Keep its HTTP
+// startup services outside this close/quit test without mocking lifecycle itself.
+vi.mock('../ipc/handlers/httpConsole', () => ({ registerHttpConsoleHandlers: vi.fn() }))
+vi.mock('../ipc/handlers/httpCookies', () => ({ registerHttpCookieHandlers: vi.fn() }))
+vi.mock('../ipc/handlers/httpScripts', () => ({ registerHttpScriptHandlers: vi.fn() }))
+vi.mock('../ipc/handlers/httpTerminal', () => ({ registerHttpTerminalHandlers: vi.fn() }))
 vi.mock('../ipc/handlers/theme', () => ({
   startThemeWatcher: vi.fn(),
   stopThemeWatcher: context.stopThemeWatcher,

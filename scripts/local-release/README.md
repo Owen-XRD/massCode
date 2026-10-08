@@ -1,0 +1,13 @@
+# Local maintenance release
+
+Version `6.0.0-owen.2` uses the official Electron runtime and renderer from v6.0.0, with 20 verified TypeScript module overlays. The upstream source baseline is `8e439a2e41620a88277c9b2806a5c3b0295fdd7d`. The release manifest binds each source and compiled module to SHA-256 and records the actual source commit. It preserves the previous 17-module release inputs.
+
+Set `MASSCODE_PATCH_ROOT` to the existing review directory containing `source`, `runtime` (compiler dependencies), `official`, and the retained `.1` `patch-build-manifest.json`. Pass `build-patch.cjs` a JSON plan with independent `runtimePath` and `manifestPath` outputs and an explicit `files` array of `{file, sourceSha256, compiledSha256}` records from the accepted manifests. Set `MASSCODE_PATCH_VERSION=6.0.0-owen.2`. The builder verifies committed sources against the plan, binds official modules to the fixed upstream baseline, and checks emitted module hashes against accepted compilation evidence.
+
+For `package-patch.cjs`, set `MASSCODE_PATCH_MANIFEST`, `MASSCODE_PATCH_COMPILED`, and `MASSCODE_PATCH_RECEIPT` to those independent outputs, then pass the new release directory. Packaging streams the original archive, publishes a flushed archive only after module readback, and copies independent official runtime files. Do not overwrite the official runtime or previous release. Reserve space for the new runtime/archive, temporary archive, transport package and receiving copy on each actual volume before packaging.
+
+`Activate-LocalRelease.ps1` accepts the installation root, machine role, version, expected archive SHA-256, receipt path and backup directory. It preserves the prior manual task and VERSION and rolls selection back on failure. Activation changes the next launch; verify the new executable and renderer, an owned HTTP-history fixture, and survival after the launcher job closes. Keep daily entries free of debug ports and log redirection.
+
+Rollback selects the retained `.1` runtime using its recorded archive hash and the preserved task/VERSION. Neither activation nor rollback copies or replaces the vault, profile, synchronization database, history versions or conflict records.
+
+Accepted validation includes the existing targeted storage tests and dual-machine native producer/archive checks. The maintenance release keeps the original dependency runtime; the known type-only chokidar interface mismatch is not represented as a runtime upgrade. Deployment receipts distinguish actual desktop use from archive verification and historical test results.

@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'fs-extra'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { pendingStateWriteByPath } from '../../../runtime/cache'
 import {
   resetCloudFileExemptions,
@@ -21,6 +21,7 @@ vi.mock('../../../cloudDownloads', () => ({
 }))
 
 const tempDirs: string[] = []
+beforeEach(() => setDatalessProbeForTests(() => false))
 
 afterEach(() => {
   resetStateWriter()

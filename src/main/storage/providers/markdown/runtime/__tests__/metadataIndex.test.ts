@@ -2,7 +2,8 @@ import type { Paths } from '../types'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'fs-extra'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setDatalessProbeForTests } from '../shared/cloudFiles'
 import { ensureSnippetContentLoaded } from '../snippets'
 import { loadState } from '../state'
 import { resetRuntimeCache, syncRuntimeWithDisk } from '../sync'
@@ -98,7 +99,11 @@ function mutateFileKeepingIndexSignature(
   fs.writeJsonSync(paths.statePath, persisted)
 }
 
+// These fixtures are local files; NTFS may store their data in resident records.
+beforeEach(() => setDatalessProbeForTests(() => false))
+
 afterEach(() => {
+  setDatalessProbeForTests(null)
   resetRuntimeCache()
 
   for (const dirPath of tempDirs.splice(0)) {

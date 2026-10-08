@@ -77,6 +77,8 @@ massCode is free and open source. But building and maintaining a quality tool ta
 
 Originally a snippet manager, massCode now brings together snippets, notes, HTTP requests, calculations, drawings, and developer tools in one desktop app, so everyday work stays in one place.
 
+This fork maintains **6.0.0-owen.2** on the official v6.0.0 runtime. It preserves the local atomic-save and file-watcher fixes and adds failure-safe HTTP history snapshots and bounded benchmark logs. The Windows daily entry starts the selected portable release through a manual scheduled task, independently of its launcher. Content remains in the existing Markdown vault; local profiles and credentials remain separate. Reproducible overlay packaging and rollback instructions are in [scripts/local-release/README.md](scripts/local-release/README.md).
+
 ## Features
 
 ### Code Snippets

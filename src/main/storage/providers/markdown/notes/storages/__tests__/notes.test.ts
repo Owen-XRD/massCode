@@ -414,6 +414,7 @@ describe('notes storage validations', () => {
   })
 
   it('keeps full invalidation for cold edits, metadata, creation, deletion and external sync', () => {
+    setDatalessProbeForTests(() => false)
     const storage = createNotesNotesStorage()
     const { id } = storage.createNote({ name: 'Original' })
     storage.updateNoteContent(id, 'oldtoken')

@@ -208,7 +208,9 @@ describe('legacy folder metadata migration', () => {
 
       return stats
     })
-    setDatalessProbeForTests(() => true)
+    // Only the migrated target is the simulated zero-block file; the legacy
+    // source is a known local fixture, including on resident-file NTFS.
+    setDatalessProbeForTests(absolutePath => absolutePath === metaPath)
 
     try {
       expect(

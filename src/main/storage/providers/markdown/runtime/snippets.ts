@@ -36,6 +36,7 @@ import {
   normalizeDirectoryPath,
 } from './paths'
 import { rememberAppFileChange } from './shared/appChanges'
+import { writeTextFileAtomicSync } from './shared/atomicWrite'
 import {
   getFileAvailability,
   markAppWrittenFileAsLocal,
@@ -601,7 +602,7 @@ export function writeSnippetToFile(
     }
   }
 
-  fs.writeFileSync(snippetPath, nextContent, 'utf8')
+  writeTextFileAtomicSync(snippetPath, nextContent)
   rememberAppFileChange(snippetPath)
   markAppWrittenFileAsLocal(snippetPath)
 }
@@ -797,12 +798,25 @@ export function persistSnippet(
   }
 
   snippet.filePath = targetPath
-  writeSnippetToFile(paths, snippet, {
-    skipIfUnavailable: options?.skipWriteIfUnavailable,
-    ...(moved && options?.sourceFileVerifiedLocal
-      ? { [trustedMovedLocalWrite]: true as const }
-      : {}),
-  })
+  try {
+    writeSnippetToFile(paths, snippet, {
+      skipIfUnavailable: options?.skipWriteIfUnavailable,
+      ...(moved && options?.sourceFileVerifiedLocal
+        ? { [trustedMovedLocalWrite]: true as const }
+        : {}),
+    })
+  }
+  catch (error) {
+    if (moved && sourceAbsolutePath) {
+      fs.moveSync(targetAbsolutePath, sourceAbsolutePath, { overwrite: false })
+      rememberAppFileChange(sourceAbsolutePath)
+      rememberAppFileChange(targetAbsolutePath)
+      upsertDirectoryEntryInCache(path.dirname(sourceAbsolutePath), path.basename(sourceAbsolutePath), directoryEntriesCache)
+      removeDirectoryEntryFromCache(path.dirname(targetAbsolutePath), path.basename(targetAbsolutePath), directoryEntriesCache)
+    }
+    snippet.filePath = sourcePath
+    throw error
+  }
 
   upsertDirectoryEntryInCache(
     path.dirname(targetAbsolutePath),

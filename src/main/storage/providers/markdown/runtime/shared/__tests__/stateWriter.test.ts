@@ -122,18 +122,18 @@ describe('stateWriter cloud placeholder guard', () => {
     vi.useFakeTimers()
     const failedStatePath = createStatePath()
     const successfulStatePath = createStatePath()
-    const writeFileSync = fs.writeFileSync.bind(fs)
+    const renameSync = fs.renameSync.bind(fs)
 
     scheduleStateFlush(failedStatePath, 'failed state')
     scheduleStateFlush(successfulStatePath, 'successful state')
-    vi.spyOn(fs, 'writeFileSync').mockImplementation(
-      (filePath, data, options) => {
-        if (filePath === failedStatePath) {
+    vi.spyOn(fs, 'renameSync').mockImplementation(
+      (sourcePath, destinationPath) => {
+        if (destinationPath === failedStatePath) {
           const error = new Error('write failed') as NodeJS.ErrnoException
           error.code = 'EIO'
           throw error
         }
-        return writeFileSync(filePath, data, options)
+        return renameSync(sourcePath, destinationPath)
       },
     )
 

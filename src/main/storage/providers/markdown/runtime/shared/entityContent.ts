@@ -35,9 +35,9 @@ export function updateEntityBodyContent<
 
   assertEntityContentAvailable(input.entity)
 
-  input.entity.content = input.content
-  input.entity.updatedAt = Date.now()
-  input.persistEntity(input.entity)
+  const candidate = { ...input.entity, content: input.content, updatedAt: Date.now() }
+  input.persistEntity(candidate)
+  Object.assign(input.entity, candidate)
   input.onAfterPersist?.()
 
   return { notFound: false }
@@ -59,9 +59,13 @@ export function createNestedContent<
   assertEntityContentAvailable(input.owner)
 
   const contentId = input.nextContentId()
-  input.owner.contents.push(input.createContent(contentId))
-  input.owner.updatedAt = Date.now()
-  input.persistOwner(input.owner)
+  const candidate = {
+    ...input.owner,
+    contents: [...input.owner.contents, input.createContent(contentId)],
+    updatedAt: Date.now(),
+  }
+  input.persistOwner(candidate)
+  Object.assign(input.owner, candidate)
 
   return { id: contentId }
 }
@@ -107,21 +111,26 @@ export function updateNestedContent<
 
   assertEntityContentAvailable(owner)
 
-  const content = owner.contents[contentIndex] as NestedContentOf<TOwner>
+  const candidate = { ...owner, contents: [...owner.contents] }
+  const content = structuredClone(owner.contents[contentIndex]) as NestedContentOf<TOwner>
+  candidate.contents[contentIndex] = content
   input.applyPatch(content, input.patch)
 
   let parentNotFound = false
   if (owner.id === input.ownerId) {
-    owner.updatedAt = Date.now()
-    input.persistOwner(owner)
+    candidate.updatedAt = Date.now()
+    input.persistOwner(candidate)
+    Object.assign(owner, candidate)
   }
   else {
-    input.persistOwner(owner)
+    input.persistOwner(candidate)
+    Object.assign(owner, candidate)
 
     const targetOwner = input.findTargetOwnerById(input.ownerId)
     if (targetOwner) {
-      targetOwner.updatedAt = Date.now()
-      input.persistOwner(targetOwner)
+      const targetCandidate = { ...targetOwner, updatedAt: Date.now() }
+      input.persistOwner(targetCandidate)
+      Object.assign(targetOwner, targetCandidate)
     }
     else {
       parentNotFound = true
@@ -151,9 +160,13 @@ export function deleteNestedContent<
   }
 
   const { contentIndex, owner } = input.ownedContent
-  owner.contents.splice(contentIndex, 1)
-  owner.updatedAt = Date.now()
-  input.persistOwner(owner)
+  const candidate = {
+    ...owner,
+    contents: owner.contents.filter((_content, index) => index !== contentIndex),
+    updatedAt: Date.now(),
+  }
+  input.persistOwner(candidate)
+  Object.assign(owner, candidate)
 
   return { deleted: true }
 }
