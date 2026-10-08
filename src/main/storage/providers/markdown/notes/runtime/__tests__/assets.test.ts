@@ -114,12 +114,12 @@ describe('writeNotesAsset', () => {
   it('rejects SVG, mismatched bytes, and an existing destination', async () => {
     const paths = createNotesPaths()
     await expect(
-      writeNotesAsset(paths, new TextEncoder().encode('<svg/>').buffer, '.svg'),
+      writeNotesAsset(paths, Uint8Array.from(new TextEncoder().encode('<svg/>')).buffer, '.svg'),
     ).rejects.toThrow('Unsupported')
     await expect(
       writeNotesAsset(
         paths,
-        new TextEncoder().encode('not png').buffer,
+        Uint8Array.from(new TextEncoder().encode('not png')).buffer,
         '.png',
       ),
     ).rejects.toThrow('does not match')

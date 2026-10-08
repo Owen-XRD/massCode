@@ -262,7 +262,8 @@ export function createSnippetsStorage(): SnippetsStorage {
     updateSnippet: (id, input): SnippetUpdateResult => {
       const paths = getPaths(getVaultPath())
       const { state, snippets } = getRuntimeCache(paths)
-      const snippet = findSnippetById(snippets, id)
+      const committed = findSnippetById(snippets, id)
+      const snippet = committed && { ...committed, contents: committed.contents.map(content => ({ ...content })) }
 
       if (!snippet) {
         return {
@@ -333,6 +334,7 @@ export function createSnippetsStorage(): SnippetsStorage {
         // блокировать удаление.
         skipWriteIfUnavailable: movedToTrash,
       })
+      Object.assign(committed!, snippet)
       saveState(paths, state)
       scheduleDockBadgeRefresh()
 

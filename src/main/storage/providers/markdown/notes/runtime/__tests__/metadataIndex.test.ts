@@ -2,7 +2,8 @@ import type { NotesPaths } from '../types'
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'fs-extra'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { setDatalessProbeForTests } from '../../../runtime/shared/cloudFiles'
 import { ensureNoteContentLoaded } from '../notes'
 import { loadNotesState } from '../state'
 import { resetNotesRuntimeCache, syncNotesRuntimeWithDisk } from '../sync'
@@ -103,7 +104,11 @@ function mutateFileKeepingIndexSignature(
   fs.writeJsonSync(paths.statePath, persisted)
 }
 
+// Index tests use local fixtures, independently of filesystem allocation size.
+beforeEach(() => setDatalessProbeForTests(() => false))
+
 afterEach(() => {
+  setDatalessProbeForTests(null)
   resetNotesRuntimeCache()
 
   for (const dirPath of tempDirs.splice(0)) {

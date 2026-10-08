@@ -11,6 +11,7 @@ import {
   writeSnippetToFile,
 } from '../../runtime'
 import { getPaths } from '../../runtime/paths'
+import { setDatalessProbeForTests } from '../../runtime/shared/cloudFiles'
 import { updateRuntimeSearchIndex } from '../../runtime/search'
 import { ensureStateFile } from '../../runtime/state'
 import { resetRuntimeCache, syncSnippetFileWithDisk } from '../../runtime/sync'
@@ -66,6 +67,7 @@ vi.mock('electron-store', () => {
 vi.mock('electron', () => ({
   BrowserWindow: {
     getFocusedWindow: () => null,
+    getAllWindows: () => [],
   },
   app: {
     getPath: () => os.tmpdir(),
@@ -96,6 +98,7 @@ describe('code snippets storage validations', () => {
   })
 
   afterEach(() => {
+    setDatalessProbeForTests(null)
     resetRuntimeCache()
 
     if (tempVaultPath) {
@@ -487,6 +490,7 @@ describe('code snippets storage validations', () => {
   })
 
   it('keeps full invalidation for cold edits, metadata, creation, deletion and external sync', () => {
+    setDatalessProbeForTests(() => false)
     const storage = createSnippetsStorage()
     const { id } = storage.createSnippet({ name: 'Original' })
     const first = storage.createSnippetContent(id, {

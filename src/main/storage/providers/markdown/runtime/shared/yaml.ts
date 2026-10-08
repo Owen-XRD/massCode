@@ -1,6 +1,7 @@
 import path from 'node:path'
 import fs from 'fs-extra'
 import yaml from 'js-yaml'
+import { writeTextFileAtomicSync } from './atomicWrite'
 import { enqueueCloudDownload } from '../../cloudDownloads'
 import { getFileAvailability } from './cloudFiles'
 
@@ -57,5 +58,5 @@ export function writeYamlObjectFile(
     .trim()
 
   fs.ensureDirSync(path.dirname(filePath))
-  fs.writeFileSync(filePath, `${body}\n`, 'utf8')
+  writeTextFileAtomicSync(filePath, `${body}\n`)
 }

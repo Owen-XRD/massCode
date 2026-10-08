@@ -67,7 +67,10 @@ beforeEach(() => {
     fs.readFileSync(file, 'utf8'),
   )
 })
-afterEach(() => fs.removeSync(mocked.root))
+afterEach(() => {
+  vi.restoreAllMocks()
+  fs.removeSync(mocked.root)
+})
 
 describe('history retention', () => {
   it('allocates IDs across owners with frozen time, restart and external replacements', () => {
@@ -432,5 +435,79 @@ describe('history retention', () => {
     storage.clear()
     for (const removed of [...remaining, folder])
       expect(wasRecentAppFileChange(removed)).toBe(true)
+  })
+})
+
+describe('storage failure capacity boundaries', () => {
+  it('reclaims only the new snapshot and temporary index on repeated index publication failure', () => {
+    const storage = createHttpHistoryStorage()
+    storage.appendEntry(entry)
+    const folder = path.join(mocked.root, '.history', '1')
+    const committed = fs.readFileSync(path.join(folder, 'index.yaml'), 'utf8')
+    const before = fs.readdirSync(folder).sort()
+    const rename = fs.renameSync.bind(fs)
+    vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (String(to).endsWith('index.yaml')) throw new Error('injected publication failure')
+      return rename(from, to)
+    })
+    for (let i = 0; i < 8; i++) {
+      expect(() => storage.appendEntry(entry)).toThrow('injected publication failure')
+      expect(fs.readdirSync(folder).sort()).toEqual(before)
+      expect(fs.readFileSync(path.join(folder, 'index.yaml'), 'utf8')).toBe(committed)
+    }
+  })
+  it('reclaims a partially written exclusively owned snapshot', () => {
+    const storage = createHttpHistoryStorage()
+    const write = fs.writeFileSync.bind(fs)
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+      if (typeof file === 'number') {
+        write(file, '{partial', options)
+        throw new Error('injected snapshot write failure')
+      }
+      return write(file, data, options)
+    })
+    expect(() => storage.appendEntry(entry)).toThrow('injected snapshot write failure')
+    expect(fs.readdirSync(path.join(mocked.root, '.history', '1'))).toEqual([])
+  })
+  it('preserves unknown snapshots and blocks additional accumulation by ownership', () => {
+    const storage = createHttpHistoryStorage()
+    storage.appendEntry(entry)
+    const folder = path.join(mocked.root, '.history', '1')
+    const unknown = path.join(folder, '123.json')
+    fs.writeFileSync(unknown, 'unknown existing bytes')
+    const before = fs.readdirSync(folder).sort()
+    for (let i = 0; i < 3; i++)
+      expect(() => storage.appendEntry(entry)).toThrow('UNREFERENCED_SNAPSHOT')
+    expect(fs.readdirSync(folder).sort()).toEqual(before)
+    expect(fs.readFileSync(unknown, 'utf8')).toBe('unknown existing bytes')
+  })
+  it('keeps the committed new snapshot on retention failure and blocks the next append', () => {
+    const storage = createHttpHistoryStorage()
+    for (let i = 0; i < 10; i++) storage.appendEntry({ ...entry, requestedAt: i })
+    const remove = fs.removeSync.bind(fs)
+    vi.spyOn(fs, 'removeSync').mockImplementation((file) => {
+      if (String(file).endsWith('.json')) throw new Error('injected retention failure')
+      return remove(file)
+    })
+    expect(() => storage.appendEntry({ ...entry, requestedAt: 99 })).toThrow(
+      'injected retention failure',
+    )
+    const records = storage.getEntries()
+    expect(records).toHaveLength(10)
+    expect(records[0].requestedAt).toBe(99)
+    expect(storage.getSnapshot(records[0].id)).toEqual(snapshot)
+    const folder = path.join(mocked.root, '.history', '1')
+    const before = fs.readdirSync(folder).sort()
+    expect(() => storage.appendEntry({ ...entry, requestedAt: 100 })).toThrow(
+      'UNREFERENCED_SNAPSHOT',
+    )
+    expect(fs.readdirSync(folder).sort()).toEqual(before)
+  })
+  it('publishes a retained append only once', () => {
+    const storage = createHttpHistoryStorage()
+    for (let i = 0; i < 10; i++) storage.appendEntry({ ...entry, requestedAt: i })
+    const rename = vi.spyOn(fs, 'renameSync')
+    storage.appendEntry({ ...entry, requestedAt: 99 })
+    expect(rename.mock.calls.filter(([, to]) => String(to).endsWith('index.yaml'))).toHaveLength(1)
   })
 })

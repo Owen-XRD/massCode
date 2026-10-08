@@ -1,5 +1,6 @@
 import path from 'node:path'
 import fs from 'fs-extra'
+import { writeTextFileAtomic } from '../runtime/shared/atomicWrite'
 import {
   enqueueCloudDownload,
   prioritizeCloudDownload,
@@ -212,8 +213,8 @@ export async function writeDrawing(
     )
   }
 
+  await writeTextFileAtomic(filePath, content)
   rememberAppChange(filePath)
-  await fs.writeFile(filePath, content, 'utf8')
   markAppWrittenFileAsLocal(filePath)
 
   return { updatedAt: Date.now() }
@@ -229,8 +230,8 @@ export async function createDrawing(
   const uniqueName = await getUniqueDrawingName(vaultPath, baseName)
   const filePath = getDrawingFilePath(vaultPath, uniqueName)
 
+  await writeTextFileAtomic(filePath, createEmptyDrawingContent())
   rememberAppChange(filePath)
-  await fs.writeFile(filePath, createEmptyDrawingContent(), 'utf8')
   markAppWrittenFileAsLocal(filePath)
 
   return (await toDrawingRecord(filePath))!

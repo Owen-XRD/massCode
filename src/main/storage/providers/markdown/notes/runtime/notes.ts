@@ -18,6 +18,7 @@ import { enqueueCloudDownload } from '../../cloudDownloads'
 import { normalizeFlag } from '../../runtime/normalizers'
 import { splitFrontmatter } from '../../runtime/parser'
 import { rememberAppFileChange } from '../../runtime/shared/appChanges'
+import { writeTextFileAtomicSync } from '../../runtime/shared/atomicWrite'
 import {
   getFileAvailability,
   markAppWrittenFileAsLocal,
@@ -633,7 +634,7 @@ export function writeNoteToFile(
   }
 
   fs.ensureDirSync(path.dirname(absolutePath))
-  fs.writeFileSync(absolutePath, nextContent, 'utf8')
+  writeTextFileAtomicSync(absolutePath, nextContent)
   rememberAppFileChange(absolutePath)
   markAppWrittenFileAsLocal(absolutePath)
 
@@ -833,22 +834,34 @@ export function persistNote(
 
   note.filePath = resolvedPath
 
-  // Update state index
-  const indexEntry = state.notes.find(n => n.id === note.id)
-  if (indexEntry) {
-    indexEntry.filePath = resolvedPath
+  // Write content
+  try {
+    writeNoteToFile(paths, note, {
+      skipIfUnavailable: options?.skipWriteIfUnavailable,
+      ...(moved && options?.sourceFileVerifiedLocal
+        ? { [trustedMovedLocalWrite]: true as const }
+        : {}),
+    })
   }
-  else {
-    state.notes.push({ id: note.id, filePath: resolvedPath })
+  catch (error) {
+    if (moved) {
+      const previousAbsolutePath = path.join(paths.notesRoot, currentFilePath)
+      fs.moveSync(resolvedAbsolutePath, previousAbsolutePath, { overwrite: false })
+      rememberAppFileChange(previousAbsolutePath)
+      rememberAppFileChange(resolvedAbsolutePath)
+      upsertDirectoryEntryInCache(path.dirname(previousAbsolutePath), path.basename(previousAbsolutePath), directoryEntriesCache)
+      removeDirectoryEntryFromCache(path.dirname(resolvedAbsolutePath), path.basename(resolvedAbsolutePath), directoryEntriesCache)
+    }
+    note.filePath = currentFilePath
+    throw error
   }
 
-  // Write content
-  writeNoteToFile(paths, note, {
-    skipIfUnavailable: options?.skipWriteIfUnavailable,
-    ...(moved && options?.sourceFileVerifiedLocal
-      ? { [trustedMovedLocalWrite]: true as const }
-      : {}),
-  })
+  // Publish the path only after the corresponding content was committed.
+  const indexEntry = state.notes.find(n => n.id === note.id)
+  if (indexEntry)
+    indexEntry.filePath = resolvedPath
+  else
+    state.notes.push({ id: note.id, filePath: resolvedPath })
   upsertDirectoryEntryInCache(
     path.dirname(resolvedAbsolutePath),
     path.basename(resolvedAbsolutePath),

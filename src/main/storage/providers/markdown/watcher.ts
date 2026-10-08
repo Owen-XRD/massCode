@@ -203,14 +203,16 @@ function scheduleStateSync(
     const changedNoteRelativePath
       = changedPath && !forceFullSync ? toNotesRelativePath(changedPath) : null
 
-    if (changedNoteRelativePath) {
+    if (changedNoteRelativePath && !hasPendingNotesSync) {
       pendingNoteFilePaths.add(changedNoteRelativePath)
       if (pendingNoteFilePaths.size > MAX_PENDING_SYNC_FILE_PATHS) {
         hasPendingNotesSync = true
+        pendingNoteFilePaths.clear()
       }
     }
     else {
       hasPendingNotesSync = true
+      pendingNoteFilePaths.clear()
     }
   }
 
@@ -245,24 +247,29 @@ function scheduleStateSync(
   }
   else if (forceFullSync || !changedPath) {
     hasPendingFullSync = true
+    pendingCodeFilePaths.clear()
 
     if (forceFullSync && !changedPath) {
       hasPendingNotesSync = true
+      pendingNoteFilePaths.clear()
       hasPendingHttpSync = true
       hasPendingDrawingsSync = true
     }
   }
   else if (changedCodeRelativePath) {
-    if (!isAppEcho) {
+    if (!isAppEcho && !hasPendingFullSync) {
       pendingCodeFilePaths.add(changedCodeRelativePath)
       if (pendingCodeFilePaths.size > MAX_PENDING_SYNC_FILE_PATHS) {
         hasPendingFullSync = true
+        pendingCodeFilePaths.clear()
       }
     }
   }
   else if (!changedNotesPath) {
     hasPendingFullSync = true
     hasPendingNotesSync = true
+    pendingCodeFilePaths.clear()
+    pendingNoteFilePaths.clear()
   }
 
   if (markdownWatchTimer) {

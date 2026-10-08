@@ -333,7 +333,8 @@ export function createHttpRequestsStorage(): HttpRequestsStorage {
       const paths = resolvePaths()
       const cache = getHttpRuntimeCache(paths)
       const { state } = cache
-      const record = cache.requestById.get(id)
+      const committed = cache.requestById.get(id)
+      const record = committed && { ...committed }
 
       if (!record) {
         return { invalidInput: false, notFound: true }
@@ -508,19 +509,24 @@ export function createHttpRequestsStorage(): HttpRequestsStorage {
 
       if (resolvedPath !== previousFilePath) {
         record.filePath = resolvedPath
+      }
 
-        const indexEntry = state.requests.find(entry => entry.id === id)
-        if (indexEntry) {
-          indexEntry.filePath = resolvedPath
+      try {
+        if (moved && sourceFileVerifiedLocal)
+          writeVerifiedMovedLocalRequestFile(paths.httpRoot, record)
+        else
+          writeRequestFile(paths.httpRoot, record)
+      }
+      catch (error) {
+        if (moved) {
+          moveRequestFile(paths.httpRoot, resolvedPath, previousFilePath)
         }
+        throw error
       }
-
-      if (moved && sourceFileVerifiedLocal) {
-        writeVerifiedMovedLocalRequestFile(paths.httpRoot, record)
-      }
-      else {
-        writeRequestFile(paths.httpRoot, record)
-      }
+      Object.assign(committed!, record)
+      const indexEntry = state.requests.find(entry => entry.id === id)
+      if (indexEntry)
+        indexEntry.filePath = resolvedPath
       saveHttpState(paths, state)
 
       return {

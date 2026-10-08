@@ -60,6 +60,10 @@ export function shouldIgnoreWatchPath(
 
   const basename = path.posix.basename(relativePath)
 
+  // Incomplete sibling files are never published vault records.
+  if (basename.startsWith('.') && basename.endsWith('.tmp'))
+    return true
+
   if (basename === '.meta.yaml' || basename === '.masscode-folder.yml') {
     return false
   }
