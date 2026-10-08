@@ -28,7 +28,7 @@ try {
  Set-ScheduledTask -TaskName 'Owen-massCode-Manual' -Action $reviewAction | Out-Null
  $reviewChanged=$true
  [IO.File]::WriteAllText($reviewVersionPath,$reviewVersion+"`r`n",[Text.UTF8Encoding]::new($false))
- $reviewEntry=& (Join-Path $Root 'Update-DesktopShortcut.ps1') -Root $Root -Role $Role -CheckOnly
+ $reviewEntry=& (Join-Path $Root 'Update-DesktopShortcut.ps1') -Root $Root -Role $Role -CheckOnly -Receipt (Join-Path $BackupRoot "$Role-tools-entry-activation.json")
 }catch {
  if($reviewChanged){Set-ScheduledTask -TaskName 'Owen-massCode-Manual' -Action $reviewOldAction | Out-Null}
  [IO.File]::WriteAllText($reviewVersionPath,$reviewOldVersion,[Text.UTF8Encoding]::new($false))
