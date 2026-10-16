@@ -17,7 +17,7 @@ import type {
 import type { ResolvedHttpCollection } from '../collection'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 import { basename } from 'node:path'
 import { redactAiHttp } from '../../../shared/aiHttp'
 import { applyHttpApiKey } from '../../../shared/httpAuth'
@@ -217,12 +217,34 @@ interface BuiltBody {
   contentType?: string
 }
 
-function readBodyFile(path: string) {
+const MAX_UPLOAD_BYTES = 16 * 1024 * 1024
+
+function readBodyFile(path: string, limit = MAX_UPLOAD_BYTES) {
+  let descriptor: number | undefined
   try {
-    return readFileSync(path)
+    descriptor = openSync(path, 'r')
+    const stat = fstatSync(descriptor)
+    if (!stat.isFile() || stat.size > limit)
+      throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
+    const buffer = Buffer.alloc(stat.size)
+    let offset = 0
+    while (offset < buffer.length) {
+      const read = readSync(descriptor, buffer, offset, buffer.length - offset, null)
+      if (!read)
+        break
+      offset += read
+    }
+    // The file may have grown after fstat; never silently send a partial body.
+    if (readSync(descriptor, Buffer.alloc(1), 0, 1, null))
+      throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
+    return buffer.subarray(0, offset)
   }
   catch {
     throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
+  }
+  finally {
+    if (descriptor !== undefined)
+      closeSync(descriptor)
   }
 }
 
@@ -231,6 +253,8 @@ export function buildBody(
   body: string | null,
   formData: HttpFormDataEntry[],
 ): BuiltBody {
+  if (bodyType !== 'binary' && body && Buffer.byteLength(body) > MAX_UPLOAD_BYTES)
+    throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
   switch (bodyType) {
     case 'binary':
       return {
@@ -251,16 +275,26 @@ export function buildBody(
         contentType: 'application/x-www-form-urlencoded',
       }
     case 'multipart': {
+      if (formData.length > 1000)
+        throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
       const fd = new FormData()
+      let remaining = MAX_UPLOAD_BYTES
       for (const entry of formData) {
         if (!entry.key || entry.enabled === false)
           continue
+        remaining -= Buffer.byteLength(entry.key)
+        if (remaining < 0)
+          throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
         if (entry.type === 'file' && entry.value) {
-          const buffer = readBodyFile(entry.value)
+          const buffer = readBodyFile(entry.value, remaining)
+          remaining -= buffer.length
           const blob = new Blob([buffer])
           fd.append(entry.key, blob, basename(entry.value))
         }
         else {
+          remaining -= Buffer.byteLength(entry.value ?? '')
+          if (remaining < 0)
+            throw new Error('HTTP_BODY_FILE_UNAVAILABLE')
           fd.append(entry.key, entry.value ?? '')
         }
       }

@@ -6,6 +6,12 @@ param(
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
+# Use the current Windows PowerShell modules even when a Core parent supplied PSModulePath.
+if($PSVersionTable.PSEdition -eq 'Desktop'){
+ foreach($entryModule in @('Microsoft.PowerShell.Management','Microsoft.PowerShell.Utility','ScheduledTasks')){
+  Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$entryModule)) -ErrorAction Stop
+ }
+}
 $rootPath=(Resolve-Path -LiteralPath $Root).ProviderPath.TrimEnd('\')
 if(-not $Role){$Role=if($rootPath -eq 'D:\Engineering\Tools\massCode'){'desktop'}elseif($rootPath -eq 'I:\ManagedSoftware\Apps\massCode'){'laptop'}else{throw 'Specify the machine role for a different installation root.'}}
 $desktop=[Environment]::GetFolderPath('Desktop')

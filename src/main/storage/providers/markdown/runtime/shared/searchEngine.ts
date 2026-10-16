@@ -8,6 +8,27 @@ import {
   splitSearchWords,
 } from './searchIndex'
 
+const MAX_CACHED_QUERIES = 64
+const MAX_CACHED_IDS = 16_384
+const MAX_CACHED_QUERY_LENGTH = 1024
+
+function cacheResult(index: SearchIndex, query: string, ids: number[]): void {
+  if (query.length > MAX_CACHED_QUERY_LENGTH || ids.length > MAX_CACHED_IDS)
+    return
+  index.queryCache.delete(query)
+  let count = ids.length
+  for (const cached of index.queryCache.values())
+    count += cached.length
+  while (index.queryCache.size >= MAX_CACHED_QUERIES || count > MAX_CACHED_IDS) {
+    const oldest = index.queryCache.keys().next().value
+    if (oldest === undefined)
+      break
+    count -= index.queryCache.get(oldest)!.length
+    index.queryCache.delete(oldest)
+  }
+  index.queryCache.set(query, ids)
+}
+
 export interface SearchIndex {
   textById: Map<number, SearchText>
   tokenToIds: Map<string, Set<number>>
@@ -77,6 +98,8 @@ export function querySearchIndex<T extends { id: number }>(
 
   const cachedResult = index.queryCache.get(normalizedQuery)
   if (cachedResult) {
+    index.queryCache.delete(normalizedQuery)
+    index.queryCache.set(normalizedQuery, cachedResult)
     return new Set(cachedResult)
   }
 
@@ -115,7 +138,7 @@ export function querySearchIndex<T extends { id: number }>(
           : intersectSets(candidateIds, wordCandidates)
 
       if (candidateIds.size === 0) {
-        index.queryCache.set(normalizedQuery, [])
+        cacheResult(index, normalizedQuery, [])
         return new Set()
       }
     }
@@ -131,7 +154,7 @@ export function querySearchIndex<T extends { id: number }>(
     }
   })
 
-  index.queryCache.set(normalizedQuery, matchedIds)
+  cacheResult(index, normalizedQuery, matchedIds)
   return new Set(matchedIds)
 }
 

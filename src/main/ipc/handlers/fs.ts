@@ -6,14 +6,10 @@ import type {
 } from '../../types/ipc'
 import { Buffer } from 'node:buffer'
 import { randomBytes } from 'node:crypto'
-import { extname, join, parse, relative } from 'node:path'
+import { join, parse } from 'node:path'
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import {
   ensureDirSync,
-  lstat,
-  readdir,
-  readFile,
-  realpath,
   writeFileSync,
 } from 'fs-extra'
 import slash from 'slash'
@@ -25,6 +21,7 @@ import {
   undoFolderIconChange,
   writeFolderIcon,
 } from '../../folderIcons'
+import { readMarkdownFolder } from '../../import/notes/readFolder'
 import { pickNoteImage, writeCapturedNoteImage } from '../../noteImagePicker'
 import { exportNote, parseNoteExportPayload } from '../../notesExport'
 import {
@@ -45,76 +42,6 @@ const ASSETS_DIR = 'assets'
 // build.
 function generateAssetId() {
   return randomBytes(12).toString('base64url')
-}
-
-async function readMarkdownFolder(
-  rootPath: string,
-): Promise<ImportMarkdownFolderResponse> {
-  const files: ImportMarkdownFolderResponse['files'] = []
-  const warnings: ImportMarkdownFolderResponse['warnings'] = []
-  const visitedDirectories = new Set<string>()
-
-  async function visit(dirPath: string) {
-    let resolvedDirPath = ''
-    let entries: string[] = []
-
-    try {
-      resolvedDirPath = await realpath(dirPath)
-      if (visitedDirectories.has(resolvedDirPath)) {
-        return
-      }
-
-      visitedDirectories.add(resolvedDirPath)
-      entries = await readdir(dirPath)
-    }
-    catch {
-      warnings.push({
-        code: 'fs.folderReadFailed',
-        source: slash(relative(rootPath, dirPath)) || '.',
-      })
-      return
-    }
-
-    await Promise.all(
-      entries.map(async (entry) => {
-        const absolutePath = join(dirPath, entry)
-        const relativePath = slash(relative(rootPath, absolutePath))
-
-        try {
-          const stat = await lstat(absolutePath)
-
-          if (stat.isSymbolicLink()) {
-            return
-          }
-
-          if (stat.isDirectory()) {
-            await visit(absolutePath)
-            return
-          }
-
-          if (!stat.isFile() || extname(entry).toLowerCase() !== '.md') {
-            return
-          }
-
-          files.push({
-            content: await readFile(absolutePath, 'utf8'),
-            name: entry,
-            relativePath,
-          })
-        }
-        catch {
-          warnings.push({
-            code: 'fs.fileReadFailed',
-            source: relativePath,
-          })
-        }
-      }),
-    )
-  }
-
-  await visit(rootPath)
-
-  return { canceled: false, files, warnings }
 }
 
 export function registerFsHandlers() {
