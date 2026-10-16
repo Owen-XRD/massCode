@@ -10,11 +10,68 @@ import {
 
 const MAX_TEXT = 128 * 1024
 const MAX_BYTES = 32 * 1024 * 1024
+
+type ConsoleContent = Pick<HttpConsoleEntry, 'message' | 'details' | 'truncated'>
+
+function boundContent(content: ConsoleContent): ConsoleContent {
+  let remaining = MAX_TEXT
+  let remainingKeys = 16 * 1024
+  let nodes = 2048
+  let truncated = content.truncated ?? false
+  const cap = (value: unknown, depth = 0): unknown => {
+    if (--nodes < 0 || remaining <= 0 || depth > 8) {
+      truncated = true
+      return '[…]'
+    }
+    if (typeof value === 'string') {
+      const size = Math.min(value.length, remaining)
+      remaining -= size
+      if (size < value.length) {
+        truncated = true
+        return `${value.slice(0, size)}…`
+      }
+      return value
+    }
+    if (Array.isArray(value)) {
+      const result: unknown[] = []
+      for (const item of value) {
+        if (result.length >= 1000 || nodes <= 0 || remaining <= 0) {
+          truncated = true
+          break
+        }
+        result.push(cap(item, depth + 1))
+      }
+      return result
+    }
+    if (value && typeof value === 'object') {
+      const result: Record<string, unknown> = Object.create(null)
+      let count = 0
+      for (const key in value) {
+        if (!Object.prototype.hasOwnProperty.call(value, key))
+          continue
+        if (++count > 1000 || nodes <= 0 || key.length >= remainingKeys) {
+          truncated = true
+          break
+        }
+        remainingKeys -= key.length
+        result[key] = cap((value as Record<string, unknown>)[key], depth + 1)
+      }
+      return result
+    }
+    return value
+  }
+  const message = cap(content.message) as string
+  const details = content.details
+    ? cap(content.details) as Record<string, unknown>
+    : undefined
+  return { message, details, truncated }
+}
+
 export class HttpConsoleJournal {
   private aiContent = new Map<
     string,
     {
-      content: Pick<HttpConsoleEntry, 'message' | 'details'>
+      content: ConsoleContent
       vaultPath?: string
     }
   >()
@@ -74,12 +131,14 @@ export class HttpConsoleJournal {
           const safe = this.aiContent.get(entry.id)
           return !safe?.vaultPath || safe.vaultPath === vaultPath
         })
-        .map(({ message: _message, details: _details, ...entry }) => ({
-          ...entry,
-          ...(this.aiContent.get(entry.id)?.content ?? {
-            message: '[CONTENT_UNAVAILABLE_FOR_AI]',
-          }),
-        })),
+        .map(({ message: _message, details: _details, ...entry }) => {
+          const safe = this.aiContent.get(entry.id)?.content
+          return {
+            ...entry,
+            ...(safe ?? { message: '[CONTENT_UNAVAILABLE_FOR_AI]' }),
+            truncated: entry.truncated === true || safe?.truncated === true,
+          }
+        }),
     }
   }
 
@@ -90,9 +149,11 @@ export class HttpConsoleJournal {
   ) {
     if (this.entries.get(id)?.executionId === identity.executionId) {
       this.aiContent.set(id, {
-        content: structuredClone(content),
+        content: boundContent(content),
         vaultPath: identity.vaultPath,
       })
+      this.accountSize(id)
+      this.prune()
     }
   }
 
@@ -111,7 +172,7 @@ export class HttpConsoleJournal {
   ) {
     const id = entry.id ?? randomUUID()
     if (aiContent)
-      this.aiContent.set(id, { content: structuredClone(aiContent) })
+      this.aiContent.set(id, { content: boundContent(aiContent) })
     return this.upsert({
       ...entry,
       id,
@@ -127,46 +188,23 @@ export class HttpConsoleJournal {
       this.upsert({ ...existing, ...patch, id })
   }
 
+  private accountSize(id: string) {
+    const entry = this.entries.get(id)
+    if (!entry)
+      return
+    const safe = this.aiContent.get(id)
+    const size = (JSON.stringify(entry).length + (safe ? JSON.stringify(safe).length : 0)) * 2
+    this.bytes += size - (this.sizes.get(id) ?? 0)
+    this.sizes.set(id, size)
+  }
+
   private upsert(entry: HttpConsoleEntry) {
-    let truncated = entry.truncated ?? false
-    let remaining = MAX_TEXT
-    const cap = (value: unknown, depth = 0): unknown => {
-      if (remaining <= 0 || depth > 8) {
-        truncated = true
-        return '[…]'
-      }
-      if (typeof value === 'string') {
-        const size = Math.min(value.length, remaining)
-        remaining -= size
-        if (size < value.length) {
-          truncated = true
-          return `${value.slice(0, size)}…`
-        }
-        return value
-      }
-      if (Array.isArray(value))
-        return value.slice(0, 1000).map(item => cap(item, depth + 1))
-      if (value && typeof value === 'object') {
-        return Object.fromEntries(
-          Object.entries(value)
-            .slice(0, 1000)
-            .map(([key, item]) => [key, cap(item, depth + 1)]),
-        )
-      }
-      return value
-    }
     const bounded: HttpConsoleEntry = {
       ...entry,
-      message: cap(entry.message) as string,
-      details: entry.details
-        ? (cap(entry.details) as Record<string, unknown>)
-        : undefined,
+      ...boundContent(entry),
     }
-    bounded.truncated = truncated
-    const size = JSON.stringify(bounded).length * 2
-    this.bytes += size - (this.sizes.get(entry.id) ?? 0)
-    this.sizes.set(entry.id, size)
     this.entries.set(entry.id, bounded)
+    this.accountSize(entry.id)
     this.prune()
     this.emit({ type: 'upsert', revision: ++this.revision, entry: bounded })
     return bounded.id

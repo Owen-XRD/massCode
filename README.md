@@ -1,3 +1,5 @@
+> Local Windows maintenance build: **6.0.0-owen.3** keeps the upstream Electron runtime and adds bounded search caching, HTTP diagnostics/uploads and import recovery. See [maintenance scope and validation](docs/local-maintenance/6.0.0-owen.3.md). The installed entry and artifact SHA are recorded separately; native GUI and long-run acceptance remain limited.
+
 <p align="center">
   <img src="./.github/assets/logo.png" alt="massCode" width="150">
 </p>

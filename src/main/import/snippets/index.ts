@@ -5,6 +5,7 @@ import type {
   ImportSource,
   SnippetImportParseResult,
 } from '../common/types'
+import { validateSnippetImport } from '../common/limits'
 import { fetchGitHubGistImport } from './githubGists'
 import { applySnippetImportResult } from './persist'
 import { parseRaycastSnippetFiles } from './raycast'
@@ -50,6 +51,7 @@ export async function previewSnippetImport(
   payload: ImportPayload = {},
 ): Promise<ImportPreview> {
   const result = await parseSnippetImportPayload(source, payload)
+  validateSnippetImport(result)
   const folders = new Map<string, number>()
   const tags = new Map<string, string>()
 
@@ -87,9 +89,10 @@ export function applySnippetImport(
   source: ImportSource,
   payload: ImportPayload = {},
 ): Promise<ImportApplySummary> {
-  return parseSnippetImportPayload(source, payload).then(result =>
-    applySnippetImportResult(source, result),
-  )
+  return parseSnippetImportPayload(source, payload).then((result) => {
+    validateSnippetImport(result)
+    return applySnippetImportResult(source, result)
+  })
 }
 
 export type {

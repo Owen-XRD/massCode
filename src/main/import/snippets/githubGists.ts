@@ -3,6 +3,7 @@ import type {
   SnippetImportParseResult,
 } from '../common/types'
 import path from 'node:path'
+import { IMPORT_FILE_COUNT, readImportResponse, validateImportInput } from '../common/limits'
 import { normalizeImportEntryName } from './normalizers'
 
 interface GitHubGistFile {
@@ -101,6 +102,13 @@ export function parseGitHubGistResponse(
   source: string,
 ): SnippetImportParseResult {
   const files = getGistFiles(gist)
+  if (files.length > IMPORT_FILE_COUNT)
+    throw new Error('IMPORT_INPUT_LIMIT')
+  validateImportInput(files.flatMap(file =>
+    typeof file.content === 'string' && !file.truncated
+      ? [{ name: 'gist-file', content: file.content }]
+      : [],
+  ))
   const warnings: SnippetImportParseResult['warnings'] = []
 
   if (!files.length) {
@@ -203,13 +211,14 @@ export async function fetchGitHubGistImport(
   }
 
   if (!response.ok) {
+    await response.body?.cancel().catch(() => {})
     throw new Error(
       getGistRequestErrorMessage(response.status, response.headers),
     )
   }
 
   return parseGitHubGistResponse(
-    (await response.json()) as GitHubGistResponse,
+    JSON.parse(await readImportResponse(response)) as GitHubGistResponse,
     urlOrId,
   )
 }

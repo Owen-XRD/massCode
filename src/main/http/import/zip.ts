@@ -1,5 +1,6 @@
 import type { HttpImportFile } from './types'
 import { Buffer } from 'node:buffer'
+import { Readable } from 'node:stream'
 import JSZip from 'jszip'
 import {
   importCountLimit,
@@ -21,7 +22,10 @@ export async function expandZipFiles(
 ): Promise<HttpImportFile[]> {
   validateImportFiles(files)
   const expandedFiles: HttpImportFile[] = []
-  let unpackedSize = 0
+  let unpackedSize = files.reduce(
+    (size, file) => size + (isZipFile(file) ? 0 : Buffer.byteLength(file.content)),
+    0,
+  )
 
   for (const file of files) {
     if (!isZipFile(file)) {
@@ -50,26 +54,27 @@ export async function expandZipFiles(
         throw new Error('spaces.http.import.runtimeWarnings.fileLimit')
       let size = 0
       const chunks: Buffer[] = []
-      await new Promise<void>((resolve, reject) => {
-        const stream = entry.nodeStream()
-        stream.on('data', (chunk: Buffer) => {
+      const stream = entry.nodeStream()
+      // JSZip ships readable-stream v2, which has no async iterator.
+      const readable = new Readable().wrap(stream)
+      try {
+        for await (const chunk of readable) {
           size += chunk.length
           unpackedSize += chunk.length
           if (size > importFileLimit || unpackedSize > importTotalLimit) {
-            stream.pause()
-            reject(
-              new Error('spaces.http.import.runtimeWarnings.invalidArchive'),
-            )
-            return
+            throw new Error('spaces.http.import.runtimeWarnings.invalidArchive')
           }
           chunks.push(chunk)
-        })
-        stream.on('error', () =>
-          reject(
-            new Error('spaces.http.import.runtimeWarnings.invalidArchive'),
-          ))
-        stream.on('end', resolve)
-      })
+        }
+      }
+      catch {
+        throw new Error('spaces.http.import.runtimeWarnings.invalidArchive')
+      }
+      finally {
+        readable.destroy()
+        if ('destroy' in stream && typeof stream.destroy === 'function')
+          stream.destroy()
+      }
       expandedFiles.push({
         content: Buffer.concat(chunks).toString('utf8'),
         name: `${file.name}/${path}`,
