@@ -1,4 +1,5 @@
 import type { Stats } from 'node:fs'
+import { Buffer } from 'node:buffer'
 import { spawnSync } from 'node:child_process'
 import path from 'node:path'
 import process from 'node:process'
@@ -59,6 +60,84 @@ const datalessCheckCache = new Map<
   { isDataless: boolean, mtimeMs: number, size: number }
 >()
 
+const windowsDatalessCache = new Map<
+  string,
+  { ctimeMs: number, isDataless: boolean, mtimeMs: number, size: number }
+>()
+const WINDOWS_RECALL_ATTRIBUTES = 0x1000 | 0x40000 | 0x400000
+const WINDOWS_ATTRIBUTE_CACHE_LIMIT = 4096
+const windowsAttributeCommand = Buffer.from(`
+$ErrorActionPreference='Stop'
+[Console]::InputEncoding=[Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
+$paths=[Console]::In.ReadToEnd()|ConvertFrom-Json
+$rows=@(foreach($entry in $paths){
+  try { @{path=[string]$entry;attributes=[long][IO.File]::GetAttributes([string]$entry)} }
+  catch { @{path=[string]$entry;attributes=$null} }
+})
+[Console]::Write((ConvertTo-Json -InputObject $rows -Compress))
+`, 'utf16le').toString('base64')
+
+function windowsCacheMatches(absolutePath: string, stats: Stats): boolean {
+  const cached = windowsDatalessCache.get(absolutePath)
+  return !!cached && cached.ctimeMs === stats.ctimeMs
+    && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size
+}
+
+function primeWindowsDatalessChecks(absolutePaths: string[]): void {
+  const pending: { path: string, stats: Stats }[] = []
+  for (const absolutePath of absolutePaths) {
+    try {
+      const stats = fs.statSync(absolutePath)
+      if (stats.isFile() && !windowsCacheMatches(absolutePath, stats))
+        pending.push({ path: absolutePath, stats })
+    }
+    catch { /* Disappearance is handled by the calling scan. */ }
+  }
+  for (let start = 0; start < pending.length; start += 128) {
+    const chunk = pending.slice(start, start + 128)
+    const input = JSON.stringify(chunk.map(entry => entry.path))
+    if (Buffer.byteLength(input) > 256 * 1024)
+      continue // Long paths are checked individually on demand.
+    try {
+      const result = spawnSync(
+        path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', windowsAttributeCommand],
+        { encoding: 'utf8', input, maxBuffer: 1024 * 1024, timeout: 3000, windowsHide: true },
+      )
+      if (result.status !== 0)
+        continue
+      const values: unknown = JSON.parse(result.stdout.replace(/^\uFEFF/, ''))
+      if (!Array.isArray(values) || values.length !== chunk.length)
+        continue
+      for (let index = 0; index < values.length; index++) {
+        const value = values[index]
+        if (value?.path !== chunk[index].path || !Number.isInteger(value?.attributes) || value.attributes < 0 || value.attributes > 0xFFFFFFFF)
+          continue
+        const { stats } = chunk[index]
+        if (windowsDatalessCache.size >= WINDOWS_ATTRIBUTE_CACHE_LIMIT)
+          windowsDatalessCache.delete(windowsDatalessCache.keys().next().value!)
+        windowsDatalessCache.set(value.path, {
+          ctimeMs: stats.ctimeMs,
+          isDataless: (value.attributes & WINDOWS_RECALL_ATTRIBUTES) !== 0,
+          mtimeMs: stats.mtimeMs,
+          size: stats.size,
+        })
+      }
+    }
+    catch { /* An unknown attribute result must not authorize a cloud read. */ }
+  }
+}
+
+function isDatalessOnWindows(absolutePath: string, stats: Stats): boolean {
+  if (!windowsCacheMatches(absolutePath, stats))
+    primeWindowsDatalessChecks([absolutePath])
+  return windowsCacheMatches(absolutePath, stats)
+    ? windowsDatalessCache.get(absolutePath)!.isDataless
+    : true
+}
+
 export function markFileReadableDespiteZeroBlocks(
   absolutePath: string,
   stats: Stats,
@@ -87,6 +166,7 @@ export function markAppWrittenFileAsLocal(absolutePath: string): void {
 export function resetCloudFileExemptions(): void {
   readableZeroBlockFiles.clear()
   datalessCheckCache.clear()
+  windowsDatalessCache.clear()
 }
 
 function hasPlaceholderSignature(stats: Stats): boolean {
@@ -141,6 +221,10 @@ const PRIME_CHUNK_SIZE = 400
 // маппинг делается по индексу; при любом сбое чанк просто не праймится и
 // файлы проверяются лениво по одному.
 export function primeDatalessChecks(absolutePaths: string[]): void {
+  if (process.platform === 'win32' && !datalessProbeOverride && !simulateCloudPlaceholders) {
+    primeWindowsDatalessChecks(absolutePaths)
+    return
+  }
   if (
     process.platform !== 'darwin'
     || datalessProbeOverride
@@ -238,7 +322,7 @@ export function getFileAvailability(absolutePath: string): FileAvailability {
 
     let isCloudPlaceholder = hasPlaceholderSignature(stats)
 
-    if (isCloudPlaceholder) {
+    if (isCloudPlaceholder || (process.platform === 'win32' && stats.isFile())) {
       const exemption = readableZeroBlockFiles.get(absolutePath)
 
       if (
@@ -250,7 +334,10 @@ export function getFileAvailability(absolutePath: string): FileAvailability {
         isCloudPlaceholder = false
       }
       else if (datalessProbeOverride) {
-        isCloudPlaceholder = datalessProbeOverride(absolutePath, stats)
+        isCloudPlaceholder = isCloudPlaceholder && datalessProbeOverride(absolutePath, stats)
+      }
+      else if (process.platform === 'win32') {
+        isCloudPlaceholder = isDatalessOnWindows(absolutePath, stats)
       }
       else if (process.platform === 'darwin') {
         isCloudPlaceholder = isDatalessOnMacos(absolutePath, stats)

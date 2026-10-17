@@ -118,7 +118,11 @@ export function createFoldersStorage(): FoldersStorage {
         )
       }
 
-      const { state, snippets } = getRuntimeCache(paths)
+      const cache = getRuntimeCache(paths)
+      const { snippets } = cache
+      // Validate and move against a proposed folder view. A rejected rename
+      // must not change the live cache or reorder its siblings.
+      const state = { ...cache.state, folders: cache.state.folders.map(folder => ({ ...folder })) }
 
       const folder = findFolderById(state, id)
       if (!folder) {
@@ -247,6 +251,7 @@ export function createFoldersStorage(): FoldersStorage {
           oldFolderPath,
           newFolderPath,
         )
+        cache.state.folders = state.folders
 
         localMetadataTargetPaths.forEach(markAppWrittenFileAsLocal)
 
@@ -282,6 +287,7 @@ export function createFoldersStorage(): FoldersStorage {
 
       syncFolderMetadataFiles(paths, state)
       saveState(paths, state)
+      cache.state.folders = state.folders
 
       return {
         invalidInput: false,

@@ -161,7 +161,9 @@ export function createNotesFoldersStorage(): NotesFoldersStorage {
         )
       }
 
-      const { state, notes } = getNotesRuntimeCache(paths)
+      const cache = getNotesRuntimeCache(paths)
+      const { notes } = cache
+      const state = { ...cache.state, folders: cache.state.folders.map(folder => ({ ...folder })) }
       const folder = findNotesFolderById(state, id)
 
       if (!folder) {
@@ -285,6 +287,7 @@ export function createNotesFoldersStorage(): NotesFoldersStorage {
           }
 
           moveFolderDirectoryOnDisk(paths.notesRoot, oldPath, newPath)
+          cache.state.folders = state.folders
 
           localMetadataTargetPaths.forEach(markAppWrittenFileAsLocal)
 
@@ -312,6 +315,7 @@ export function createNotesFoldersStorage(): NotesFoldersStorage {
 
       syncNotesFolderMetadataFiles(paths, state)
       saveNotesState(paths, state)
+      cache.state.folders = state.folders
       return { invalidInput: false, notFound: false }
     },
 
