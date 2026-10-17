@@ -252,6 +252,7 @@ export function createFoldersStorage(): FoldersStorage {
           newFolderPath,
         )
         cache.state.folders = state.folders
+        cache.folderById = new Map(state.folders.map(folder => [folder.id, folder]))
 
         localMetadataTargetPaths.forEach(markAppWrittenFileAsLocal)
 
@@ -288,6 +289,7 @@ export function createFoldersStorage(): FoldersStorage {
       syncFolderMetadataFiles(paths, state)
       saveState(paths, state)
       cache.state.folders = state.folders
+      cache.folderById = new Map(state.folders.map(folder => [folder.id, folder]))
 
       return {
         invalidInput: false,

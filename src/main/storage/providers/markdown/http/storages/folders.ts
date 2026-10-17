@@ -375,6 +375,7 @@ export function createHttpFoldersStorage(): HttpFoldersStorage {
 
           moveFolderDirectoryOnDisk(paths.httpRoot, oldPath, newPath)
           cache.state.folders = state.folders
+          cache.folderById = new Map(state.folders.map(folder => [folder.id, folder]))
 
           updateChildEntityPaths({
             entries: [...cache.requestById.values()],
@@ -436,6 +437,7 @@ export function createHttpFoldersStorage(): HttpFoldersStorage {
         saveHttpState(paths, state)
       }
       cache.state.folders = state.folders
+      cache.folderById = new Map(state.folders.map(folder => [folder.id, folder]))
       return { invalidInput: false, notFound: false }
     },
 
