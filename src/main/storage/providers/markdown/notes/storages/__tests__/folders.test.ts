@@ -10,8 +10,9 @@ import {
   resetCloudFileExemptions,
   setDatalessProbeForTests,
 } from '../../../runtime/shared/cloudFiles'
+import { getNotesPaths } from '../../runtime/constants'
 import { ensureNotesStateFile } from '../../runtime/state'
-import { resetNotesRuntimeCache } from '../../runtime/sync'
+import { getNotesRuntimeCache, resetNotesRuntimeCache } from '../../runtime/sync'
 import { createNotesFoldersStorage } from '../folders'
 import { createNotesNotesStorage } from '../notes'
 
@@ -112,6 +113,18 @@ vi.mock('../../../../../../store', () => ({
 }))
 
 describe('folders storage validations', () => {
+  it('publishes successful folder updates to an already populated ID index', () => {
+    const storage = createNotesFoldersStorage()
+    const { id } = storage.createFolder({ name: 'Source' })
+    const paths = getNotesPaths(tempVaultPath)
+    const cache = getNotesRuntimeCache(paths)
+    cache.folderById = new Map(cache.state.folders.map(folder => [folder.id, folder]))
+    storage.updateFolder(id, { name: 'First' })
+    expect(cache.folderById.get(id)?.name).toBe('First')
+    storage.updateFolder(id, { name: 'Second' })
+    expect(cache.folderById.get(id)?.name).toBe('Second')
+    expect(fs.existsSync(path.join(paths.notesRoot, 'Second'))).toBe(true)
+  })
   it('a failed move preserves folder names, parent and sibling order', () => {
     const storage = createNotesFoldersStorage()
     const { id } = storage.createFolder({ name: 'Source' })

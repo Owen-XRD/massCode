@@ -12,7 +12,7 @@ import {
   setDatalessProbeForTests,
 } from '../../runtime/shared/cloudFiles'
 import { ensureStateFile } from '../../runtime/state'
-import { resetRuntimeCache } from '../../runtime/sync'
+import { getRuntimeCache, resetRuntimeCache } from '../../runtime/sync'
 import { createFoldersStorage } from '../folders'
 
 let tempVaultPath = ''
@@ -112,6 +112,17 @@ vi.mock('../../../../../store', () => ({
 }))
 
 describe('code folders storage validations', () => {
+  it('publishes successful folder updates to an already populated ID index', () => {
+    const storage = createFoldersStorage()
+    const { id } = storage.createFolder({ name: 'Source' })
+    const cache = getRuntimeCache(getPaths(tempVaultPath))
+    cache.folderById = new Map(cache.state.folders.map(folder => [folder.id, folder]))
+    storage.updateFolder(id, { name: 'First' })
+    expect(cache.folderById.get(id)?.name).toBe('First')
+    storage.updateFolder(id, { name: 'Second' })
+    expect(cache.folderById.get(id)?.name).toBe('Second')
+    expect(fs.existsSync(path.join(getPaths(tempVaultPath).vaultPath, 'Second'))).toBe(true)
+  })
   beforeEach(() => {
     tempVaultPath = fs.mkdtempSync(
       path.join(os.tmpdir(), 'code-folders-storage-'),

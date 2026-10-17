@@ -126,6 +126,18 @@ vi.mock('../../../../../../store', () => ({
 }))
 
 describe('http folders storage', () => {
+  it('publishes successful folder updates to an already populated ID index', () => {
+    const storage = createHttpFoldersStorage()
+    const { id } = storage.createFolder({ name: 'Source' })
+    const paths = getHttpPaths(tempVaultPath)
+    const cache = getHttpRuntimeCache(paths)
+    cache.folderById = new Map(cache.state.folders.map(folder => [folder.id, folder]))
+    storage.updateFolder(id, { name: 'First' })
+    expect(cache.folderById.get(id)?.name).toBe('First')
+    storage.updateFolder(id, { name: 'Second' })
+    expect(cache.folderById.get(id)?.name).toBe('Second')
+    expect(fs.existsSync(path.join(paths.httpRoot, 'Second'))).toBe(true)
+  })
   it('a failed move preserves folder names, parent and sibling order', () => {
     const storage = createHttpFoldersStorage()
     const { id } = storage.createFolder({ name: 'Source' })
