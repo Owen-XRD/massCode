@@ -126,6 +126,22 @@ vi.mock('../../../../../../store', () => ({
 }))
 
 describe('http folders storage', () => {
+  it('a failed move preserves folder names, parent and sibling order', () => {
+    const storage = createHttpFoldersStorage()
+    const { id } = storage.createFolder({ name: 'Source' })
+    const { id: parentId } = storage.createFolder({ name: 'Parent' })
+    const before = structuredClone(storage.getFolders())
+    const move = vi.spyOn(fs, 'moveSync').mockImplementation(() => {
+      throw new Error('controlled directory move failure')
+    })
+    try {
+      expect(() => storage.updateFolder(id, { name: 'Moved', parentId })).toThrow('controlled directory move failure')
+      expect(storage.getFolders()).toEqual(before)
+    }
+    finally { move.mockRestore() }
+    storage.updateFolder(id, { name: 'Recovered' })
+    expect(storage.getFolders().find(folder => folder.id === id)?.name).toBe('Recovered')
+  })
   beforeEach(() => {
     tempVaultPath = fs.mkdtempSync(
       path.join(os.tmpdir(), 'http-folders-storage-'),

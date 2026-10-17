@@ -241,7 +241,7 @@ export function createHttpFoldersStorage(): HttpFoldersStorage {
       }
 
       const cache = getHttpRuntimeCache(paths)
-      const { state } = cache
+      const state = { ...cache.state, folders: cache.state.folders.map(folder => ({ ...folder })) }
       const folder = findHttpFolderById(state.folders, id)
 
       if (!folder) {
@@ -374,6 +374,7 @@ export function createHttpFoldersStorage(): HttpFoldersStorage {
           }
 
           moveFolderDirectoryOnDisk(paths.httpRoot, oldPath, newPath)
+          cache.state.folders = state.folders
 
           updateChildEntityPaths({
             entries: [...cache.requestById.values()],
@@ -434,6 +435,7 @@ export function createHttpFoldersStorage(): HttpFoldersStorage {
       else {
         saveHttpState(paths, state)
       }
+      cache.state.folders = state.folders
       return { invalidInput: false, notFound: false }
     },
 

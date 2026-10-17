@@ -166,6 +166,27 @@ describe('code folders storage validations', () => {
     expect(() => storage.updateFolder(id, { name: 'Target' })).toThrow(
       'NAME_CONFLICT',
     )
+    expect(storage.getFolders().find(folder => folder.id === id)?.name).toBe('Source')
+    expect(fs.existsSync(path.join(codeRootPath, 'Source'))).toBe(true)
+  })
+
+  it('a failed directory move preserves the original folder and sibling state', () => {
+    const storage = createFoldersStorage()
+    const { id } = storage.createFolder({ name: 'Source' })
+    const { id: parentId } = storage.createFolder({ name: 'Parent' })
+    const before = structuredClone(storage.getFolders())
+    const move = vi.spyOn(fs, 'moveSync').mockImplementation(() => {
+      throw new Error('controlled directory move failure')
+    })
+    try {
+      expect(() => storage.updateFolder(id, { name: 'Moved', parentId })).toThrow('controlled directory move failure')
+      expect(storage.getFolders()).toEqual(before)
+    }
+    finally {
+      move.mockRestore()
+    }
+    expect(storage.updateFolder(id, { name: 'Recovered' })).toEqual({ invalidInput: false, notFound: false })
+    expect(storage.getFolders().find(folder => folder.id === id)?.name).toBe('Recovered')
   })
 
   it('rejects reserved flat space names at root level', () => {
