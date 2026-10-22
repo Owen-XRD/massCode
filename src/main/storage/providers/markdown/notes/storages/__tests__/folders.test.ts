@@ -113,6 +113,24 @@ vi.mock('../../../../../../store', () => ({
 }))
 
 describe('folders storage validations', () => {
+  it('preserves folders after a disk deletion error and supports a retry', () => {
+    const storage = createNotesFoldersStorage()
+    const { id } = storage.createFolder({ name: 'Protected' })
+    const before = storage.getFolders().map(folder => ({ ...folder }))
+    const remove = vi.spyOn(fs, 'removeSync').mockImplementation(() => {
+      throw new Error('controlled folder deletion failure')
+    })
+    try {
+      expect(() => storage.deleteFolder(id)).toThrow('controlled folder deletion failure')
+      expect(storage.getFolders()).toEqual(before)
+    }
+    finally {
+      remove.mockRestore()
+    }
+    expect(storage.deleteFolder(id)).toEqual({ deleted: true })
+    expect(storage.getFolders().some(folder => folder.id === id)).toBe(false)
+  })
+
   it('publishes successful folder updates to an already populated ID index', () => {
     const storage = createNotesFoldersStorage()
     const { id } = storage.createFolder({ name: 'Source' })

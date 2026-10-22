@@ -399,9 +399,7 @@ export function createNotesFoldersStorage(): NotesFoldersStorage {
         descendantIds,
       )
 
-      removeFolderPathsFromDisk(paths.notesRoot, folderPathsToDelete, {
-        ignoreErrors: true,
-      })
+      removeFolderPathsFromDisk(paths.notesRoot, folderPathsToDelete)
 
       state.folders = state.folders.filter(f => !descendantIds.has(f.id))
       saveNotesState(paths, state)
