@@ -373,11 +373,11 @@ export function createFoldersStorage(): FoldersStorage {
         }
       })
 
+      removeFolderPathsFromDisk(paths.vaultPath, removedFolderPaths)
+
       state.folders = state.folders.filter(
         folder => !removedFolderIds.has(folder.id),
       )
-
-      removeFolderPathsFromDisk(paths.vaultPath, removedFolderPaths)
 
       saveState(paths, state)
       scheduleDockBadgeRefresh()

@@ -544,9 +544,7 @@ export function createHttpFoldersStorage(): HttpFoldersStorage {
         )
       }
 
-      removeFolderPathsFromDisk(paths.httpRoot, folderPathsToDelete, {
-        ignoreErrors: true,
-      })
+      removeFolderPathsFromDisk(paths.httpRoot, folderPathsToDelete)
 
       state.folders = state.folders.filter(f => !descendantIds.has(f.id))
 

@@ -182,21 +182,10 @@ export function assertNoUnknownDomainFiles(
 export function removeFolderPathsFromDisk(
   rootPath: string,
   folderPaths: string[],
-  options?: { ignoreErrors?: boolean },
 ): void {
   folderPaths.forEach((folderPath) => {
     const absolutePath = path.join(rootPath, folderPath)
     if (!fs.pathExistsSync(absolutePath)) {
-      return
-    }
-
-    if (options?.ignoreErrors) {
-      try {
-        fs.removeSync(absolutePath)
-      }
-      catch {
-        // Non-critical cleanup
-      }
       return
     }
 
